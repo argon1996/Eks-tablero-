@@ -46,7 +46,10 @@ La conexión recomendada usa la sesión actual configurada por AWS CLI y `kubeco
 ### Organización del código
 
 - `pods_local.py`: entrada de línea de comandos y arranque local.
-- `eks_console/backend.py`: consultas a EKS, inventario, métricas y captura de rendimiento.
+- `eks_console/backend.py`: fachada de consultas EKS e inventario usada por la API.
+- `eks_console/kubernetes_models.py`: estados, recursos y modelos de pods.
+- `eks_console/aws_auth.py`: sesiones AWS y credenciales temporales en memoria.
+- `eks_console/performance.py`: captura de rendimiento, JMeter y análisis.
 - `eks_console/azure.py`: consultas a Azure DevOps y protección de variables secretas.
 - `eks_console/server.py`: API HTTP local y validaciones de solicitudes.
 - `eks_console/web/`: interfaz HTML, CSS y JavaScript.
