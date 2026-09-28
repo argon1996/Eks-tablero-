@@ -32,6 +32,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, (WEB / filename).read_bytes(), kind)
         try:
             if parsed.path == '/api/config': result = backend.config_info()
+            elif parsed.path == '/api/aws/status': result = backend.aws_connection_status(param('context'))
             elif parsed.path == '/api/performance': result=backend.PERF.status()
             elif parsed.path == '/api/azure/definitions': result=backend.azure_definitions()
             elif parsed.path == '/api/azure/definition': result=backend.azure_definition(param('kind'),param('id'))
@@ -61,8 +62,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/performance/jtl':result=backend.PERF.import_results(data)
             elif path=='/api/aws/session':result=backend.aws_block_connect(data)
             elif path=='/api/aws/disconnect':
-                with backend.AWS_SESSION_LOCK:backend.AWS_SESSIONS.pop(str(data.get('context','')),None)
-                result={'removed':True}
+                context=str(data.get('context','')).strip()
+                with backend.AWS_SESSION_LOCK:backend.AWS_SESSIONS.pop(context,None)
+                result={'removed':True,'status':backend.aws_connection_status(context)}
             elif path=='/api/azure/connect': result=backend.azure_definitions() if backend.DEMO else backend.azure_block_connect(data)
             elif path=='/api/azure/disconnect':
                 backend.AZURE.disconnect()

@@ -127,11 +127,13 @@ def config_info():
         return {'contexts': [{'name': 'demo-eks-qa', 'label': 'eks-documentos-qa', 'namespace': 'generaciondocumentaldigital-qa', 'eks': True, 'region': 'us-east-1'}],
                 'current': 'demo-eks-qa', 'profiles': ['demo-qa'], 'profile': 'demo-qa',
                 'scripts': [], 'connected_script': '', 'demo': True, 'error': None,
-                'kubectl': True, 'aws': True}
+                'kubectl': True, 'aws': True, 'temporary_contexts': []}
     info = {'contexts': [], 'current': '', 'profiles': profile_names(),
             'profile': os.environ.get('AWS_PROFILE') or os.environ.get('AWS_DEFAULT_PROFILE') or '',
             'scripts': discover_scripts(), 'connected_script': Path(CONNECTED_SCRIPT).name if CONNECTED_SCRIPT else '',
             'demo': False, 'kubectl': bool(shutil.which('kubectl')), 'aws': bool(shutil.which('aws')), 'error': None}
+    with AWS_SESSION_LOCK:
+        info['temporary_contexts'] = sorted(AWS_SESSIONS)
     try:
         cfg = json.loads(kubectl('config', 'view', '-o', 'json', timeout=6))
         info['current'] = cfg.get('current-context', '')
@@ -701,6 +703,56 @@ def aws_process_env(context):
     return env
 
 
+def aws_connection_status(context):
+    """Comprueba la ruta de autenticación activa sin exponer credenciales."""
+    context = str(context or '').strip()
+    if DEMO:
+        return {'connected': True, 'state': 'connected', 'source': 'demo',
+                'context': context or 'demo-eks-qa', 'account': '000000000000',
+                'arn': 'arn:aws:sts::000000000000:assumed-role/demo/eks-console',
+                'message': 'Sesión de demostración activa. No se consultó AWS.'}
+    if not context:
+        return {'connected': False, 'state': 'no_context', 'source': 'none', 'context': '',
+                'message': 'Selecciona un contexto de Kubernetes para verificar la conexión.'}
+    try:
+        context = resolve_context(context)
+    except (RuntimeError, ValueError) as exc:
+        return {'connected': False, 'state': 'no_context', 'source': 'none', 'context': context,
+                'message': str(exc)}
+    with AWS_SESSION_LOCK:
+        temporary = context in AWS_SESSIONS
+        loaded_at = AWS_SESSIONS.get(context, {}).get('loaded_at')
+    if temporary:
+        if not shutil.which('aws'):
+            return {'connected': False, 'state': 'missing_aws_cli', 'source': 'temporary',
+                    'context': context, 'message': 'AWS CLI no está disponible en el PATH.'}
+        env = aws_process_env(context) or dict(os.environ)
+        env['AWS_PAGER'] = ''
+        try:
+            identity = json.loads(run_command(
+                ['aws', 'sts', 'get-caller-identity', '--output', 'json', '--no-cli-pager'],
+                timeout=10, env=env))
+            return {'connected': True, 'state': 'connected', 'source': 'temporary',
+                    'context': context, 'account': identity.get('Account', ''),
+                    'arn': identity.get('Arn', ''), 'loaded_at': loaded_at,
+                    'message': 'Credenciales temporales verificadas por AWS.'}
+        except (RuntimeError, ValueError) as exc:
+            return {'connected': False, 'state': 'invalid_credentials', 'source': 'temporary',
+                    'context': context, 'message': str(exc)}
+    if not shutil.which('kubectl'):
+        return {'connected': False, 'state': 'missing_kubectl', 'source': 'cli',
+                'context': context, 'message': 'kubectl no está disponible en el PATH.'}
+    try:
+        # kubectl respeta el perfil/exec configurado en kubeconfig (SSO, SAML o AWS CLI).
+        kubectl('version', '--request-timeout=8s', '-o', 'json', context=context, timeout=10)
+        profile = os.environ.get('AWS_PROFILE') or os.environ.get('AWS_DEFAULT_PROFILE') or ''
+        return {'connected': True, 'state': 'connected', 'source': 'cli', 'context': context,
+                'profile': profile, 'message': 'La sesión local puede autenticarse contra el clúster.'}
+    except RuntimeError as exc:
+        return {'connected': False, 'state': 'login_required', 'source': 'cli', 'context': context,
+                'message': str(exc)}
+
+
 def aws_block_connect(data):
     values=parse_environment_block(data.get('block',''),AWS_KEYS)
     required={'AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN'}
@@ -708,10 +760,17 @@ def aws_block_connect(data):
         raise ValueError('El bloque temporal debe incluir AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY y AWS_SESSION_TOKEN.')
     context=str(data.get('context','')).strip()
     if not context:raise ValueError('Selecciona primero el contexto EKS al que corresponde el bloque.')
-    if DEMO:return {'loaded':True,'context':context,'demo':True}
+    if DEMO:
+        return {'loaded': True, 'context': context, 'demo': True,
+                'status': aws_connection_status(context)}
     context=resolve_context(context)
     with AWS_SESSION_LOCK:AWS_SESSIONS[context]={'values':values,'loaded_at':time.time()}
-    return {'loaded':True,'context':context,'demo':False}
+    status = aws_connection_status(context)
+    if not status.get('connected'):
+        with AWS_SESSION_LOCK:
+            AWS_SESSIONS.pop(context, None)
+        raise ValueError('AWS rechazó las credenciales temporales: ' + status.get('message', 'verifica el bloque pegado.'))
+    return {'loaded': True, 'context': context, 'demo': False, 'status': status}
 
 
 def azure_block_connect(data):

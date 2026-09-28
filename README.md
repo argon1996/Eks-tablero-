@@ -29,13 +29,15 @@ py pods_local.py --connect-script "C:\ruta\conectar-eks.ps1"
 
 ### Acceso directo en Windows
 
-Guarda el proyecto en una carpeta definitiva y ejecuta en PowerShell, desde esa carpeta:
+Ejecuta en PowerShell, desde la carpeta descargada:
 
 ```powershell
 .\install-shortcut.ps1
 ```
 
-El instalador crea un acceso en el Escritorio y en el menú Inicio. Si tu Windows conserva la carpeta `Links`, también lo agrega a Favoritos del Explorador. Desde Inicio puedes anclarlo manualmente a la barra de tareas. Para abrir con datos simulados, ejecuta `.\launch-console.ps1 -Demo`; para usar tu script de conexión, `.\launch-console.ps1 -ConnectScript "C:\ruta\conectar-eks.ps1"`. El acceso directo abre la sesión actual de `kubectl` sin ejecutar automáticamente scripts ni pedir credenciales.
+El instalador copia la aplicación a `%LOCALAPPDATA%\Programs\Bancolombia EKS Console`, valida Python y crea accesos en el Escritorio, el menú Inicio y la ubicación de aplicaciones ancladas de la barra de tareas. Algunas políticas de Windows exigen anclarla manualmente desde Inicio la primera vez. Para abrir con datos simulados, ejecuta `.\launch-console.ps1 -Demo`; para usar tu script de conexión, `.\launch-console.ps1 -ConnectScript "C:\ruta\conectar-eks.ps1"`.
+
+La conexión recomendada usa la sesión actual configurada por AWS CLI y `kubeconfig`. Como alternativa, la interfaz admite un bloque temporal con `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN`: la identidad se valida con AWS antes de marcarla como conectada y los valores permanecen únicamente en memoria.
 
 ### Organización del código
 
@@ -59,4 +61,5 @@ La aplicación escucha únicamente en `127.0.0.1`. Para conectar AWS puede usar 
 
 ```powershell
 python -m compileall -q pods_local.py eks_console
+python -m unittest discover -s tests -v
 ```
