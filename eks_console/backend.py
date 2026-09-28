@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -34,6 +35,10 @@ NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
 SCRIPT_TYPES = {'.ps1', '.sh', '.bat', '.cmd'}
 DEMO = False
 CONNECTED_SCRIPT = ''
+KUBE_CONFIG_LOCK = threading.RLock()
+KUBE_CONFIG_CACHE = {'data': None, 'expires': 0.0}
+LOCAL_DETAILS_LOCK = threading.RLock()
+LOCAL_DETAILS_CACHE = {'data': None, 'expires': 0.0}
 
 
 def run_command(command, timeout=15, env=None):
@@ -63,11 +68,12 @@ def kubectl(*args, context=None, timeout=15):
     return run_command(command + list(args), timeout, env=aws_process_env(context))
 
 
-def scope(namespace, allow_all=True):
-    if namespace == '*' and allow_all:
-        return ['-A']
+def scope(namespace):
+    namespace = str(namespace or '').strip()
+    if namespace == '*':
+        raise ValueError('Por seguridad, selecciona un namespace exacto. Las consultas globales están deshabilitadas.')
     if not NAME.fullmatch(namespace) or '.' in namespace or len(namespace) > 63:
-        raise ValueError('Escribe un namespace válido; usa * para todos si tienes permiso.')
+        raise ValueError('Escribe un namespace válido y específico.')
     return ['-n', namespace]
 
 
@@ -122,20 +128,41 @@ def profile_names():
         return []
 
 
-def config_info():
+def kube_config(force=False):
+    now = time.monotonic()
+    with KUBE_CONFIG_LOCK:
+        if not force and KUBE_CONFIG_CACHE['data'] is not None and KUBE_CONFIG_CACHE['expires'] > now:
+            return KUBE_CONFIG_CACHE['data']
+        data = json.loads(kubectl('config', 'view', '-o', 'json', timeout=4))
+        KUBE_CONFIG_CACHE.update(data=data, expires=now + 10)
+        return data
+
+
+def local_details(force=False):
+    now = time.monotonic()
+    with LOCAL_DETAILS_LOCK:
+        if not force and LOCAL_DETAILS_CACHE['data'] is not None and LOCAL_DETAILS_CACHE['expires'] > now:
+            return LOCAL_DETAILS_CACHE['data']
+        data = {'profiles': profile_names(), 'scripts': discover_scripts()}
+        LOCAL_DETAILS_CACHE.update(data=data, expires=now + 60)
+        return data
+
+
+def config_info(force=False, details=False):
     if DEMO:
         return {'contexts': [{'name': 'demo-eks-qa', 'label': 'eks-documentos-qa', 'namespace': 'generaciondocumentaldigital-qa', 'eks': True, 'region': 'us-east-1'}],
                 'current': 'demo-eks-qa', 'profiles': ['demo-qa'], 'profile': 'demo-qa',
                 'scripts': [], 'connected_script': '', 'demo': True, 'error': None,
                 'kubectl': True, 'aws': True, 'temporary_contexts': []}
-    info = {'contexts': [], 'current': '', 'profiles': profile_names(),
+    extras = local_details(force) if details else {'profiles': [], 'scripts': []}
+    info = {'contexts': [], 'current': '', 'profiles': extras['profiles'],
             'profile': os.environ.get('AWS_PROFILE') or os.environ.get('AWS_DEFAULT_PROFILE') or '',
-            'scripts': discover_scripts(), 'connected_script': Path(CONNECTED_SCRIPT).name if CONNECTED_SCRIPT else '',
+            'scripts': extras['scripts'], 'connected_script': Path(CONNECTED_SCRIPT).name if CONNECTED_SCRIPT else '',
             'demo': False, 'kubectl': bool(shutil.which('kubectl')), 'aws': bool(shutil.which('aws')), 'error': None}
     with AWS_SESSION_LOCK:
         info['temporary_contexts'] = sorted(AWS_SESSIONS)
     try:
-        cfg = json.loads(kubectl('config', 'view', '-o', 'json', timeout=6))
+        cfg = kube_config(force)
         info['current'] = cfg.get('current-context', '')
         for c in cfg.get('contexts') or []:
             context = c.get('context') or {}
@@ -152,7 +179,7 @@ def config_info():
 
 def resolve_context(context):
     # Se fija un contexto por consulta, sin modificar el contexto global.
-    cfg = json.loads(kubectl('config', 'view', '-o', 'json', timeout=6))
+    cfg = kube_config()
     selected = context or cfg.get('current-context', '')
     if not selected or selected not in {c.get('name') for c in cfg.get('contexts') or []}:
         raise ValueError('No hay un contexto válido. Ejecuta tu conexión a EKS y vuelve a detectar.')
@@ -248,32 +275,54 @@ def _base_pod_record(item, metrics):
 
 def metrics_for(namespace, context):
     try:
-        raw = kubectl('top', 'pods', *scope(namespace), '--no-headers', context=context, timeout=10)
+        raw = kubectl('--request-timeout=5s', 'top', 'pods', *scope(namespace), '--no-headers', context=context, timeout=7)
         data = {}
         for line in raw.splitlines():
             parts = line.split()
-            if namespace == '*' and len(parts) >= 4: ns, name, cpu, mem = parts[:4]
-            elif namespace != '*' and len(parts) >= 3: ns, (name, cpu, mem) = namespace, parts[:3]
-            else: continue
+            if len(parts) < 3: continue
+            ns, (name, cpu, mem) = namespace, parts[:3]
             data[(ns, name)] = {'cpu': number(cpu, True), 'memory': number(mem)}
         return data, None
     except RuntimeError as exc:
         return {}, str(exc)
 
 
-def list_pods(namespace, context):
+def list_pods(namespace, context, include_metrics=True):
+    started = time.perf_counter()
     scope(namespace)
-    if DEMO: return demo_snapshot(namespace, context)
+    if DEMO:
+        result = demo_snapshot(namespace, context)
+        result['query_ms'] = round((time.perf_counter() - started) * 1000)
+        return result
     context = resolve_context(context)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        metrics_task = pool.submit(metrics_for, namespace, context)
-        raw = json.loads(kubectl('get', 'pods', *scope(namespace), '-o', 'json', context=context))
-        metrics, error = metrics_task.result()
+    if include_metrics:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            metrics_task = pool.submit(metrics_for, namespace, context)
+            raw = json.loads(kubectl('--request-timeout=8s', 'get', 'pods', *scope(namespace), '-o', 'json', context=context, timeout=10))
+            metrics, error = metrics_task.result()
+    else:
+        raw = json.loads(kubectl('--request-timeout=8s', 'get', 'pods', *scope(namespace), '-o', 'json', context=context, timeout=10))
+        metrics, error = {}, None
     pods = [pod_record(p, metrics.get((p['metadata'].get('namespace'), p['metadata'].get('name')), {}))
             for p in raw.get('items') or []]
     pods.sort(key=lambda p: ({'danger': 0, 'warning': 1, 'good': 2, 'neutral': 3}[p['severity']], p['name']))
     return {'pods': pods, 'context': context, 'namespace': namespace, 'metrics_error': error,
-            'updated': datetime.now().astimezone().isoformat(timespec='seconds'), 'demo': False}
+            'updated': datetime.now().astimezone().isoformat(timespec='seconds'), 'demo': False,
+            'query_ms': round((time.perf_counter() - started) * 1000)}
+
+
+def pod_metrics(namespace, context):
+    started = time.perf_counter()
+    scope(namespace)
+    if DEMO:
+        snapshot = demo_snapshot(namespace, context)
+        values = [{'namespace': p['namespace'], 'name': p['name'], 'cpu': p['cpu'], 'memory': p['memory']}
+                  for p in snapshot['pods']]
+        return {'metrics': values, 'error': None, 'query_ms': round((time.perf_counter() - started) * 1000)}
+    context = resolve_context(context)
+    values, error = metrics_for(namespace, context)
+    return {'metrics': [{'namespace': ns, 'name': name, **metric} for (ns, name), metric in values.items()],
+            'error': error, 'query_ms': round((time.perf_counter() - started) * 1000)}
 
 
 def _base_demo_snapshot(namespace, context):
@@ -294,14 +343,14 @@ def _base_demo_snapshot(namespace, context):
           'containers': [{'name': micro, 'image': f'demo/{micro}:1.4.2', 'ready': ready,
                           'restarts': 6 if i == 3 else 0, 'last_reason': 'OOMKilled' if i == 3 else '',
                           'resources': {'requests': {'cpu':'250m','memory':'512Mi'}, 'limits': {'cpu':'1','memory':'2Gi'}}}]})
-    if namespace not in ('*', 'generaciondocumentaldigital-qa'): pods = []
+    if namespace != 'generaciondocumentaldigital-qa': pods = []
     pods.sort(key=lambda p: ({'danger':0, 'warning':1, 'good':2}[p['severity']], p['name']))
     return {'pods': pods, 'context': context or 'demo-eks-qa', 'namespace': namespace, 'metrics_error': None,
             'updated': datetime.now().astimezone().isoformat(timespec='seconds'), 'demo': True}
 
 
 def pod_content(kind, namespace, pod, context, container='', previous=False, since=''):
-    scope(namespace, False); validate_name(pod)
+    scope(namespace); validate_name(pod)
     if container: validate_name(container)
     if since and (len(since) > 64 or not re.fullmatch(
             r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})', since)):
@@ -341,7 +390,6 @@ import io
 import math
 import secrets
 import ssl
-import time
 import urllib.request
 import urllib.error
 from collections import deque, defaultdict

@@ -5,6 +5,7 @@ Tablero local en Python para consultar Kubernetes/EKS con una interfaz gráfica 
 ## Funcionalidades
 
 - Vista de pods, estados, readiness, reinicios, CPU y memoria.
+- Carga progresiva: la tabla de pods aparece sin esperar a Metrics Server y muestra el tiempo real de cada consulta.
 - Logs por contenedor con consulta puntual, captura continua, limpieza y copia al portapapeles; no genera archivos.
 - Inventario de recursos por namespace con manejo de permisos parciales.
 - Vista **Performance** con CPU/memoria frente a requests y limits, HPA, réplicas y captura periódica.
@@ -57,6 +58,8 @@ Solo se mantiene una instancia por puerto. Si vuelves a abrir EKS Console mientr
 
 - No se envían credenciales a un servidor externo.
 - No se guardan tokens en archivos.
+- Las consultas globales (`-A`) están bloqueadas: la operación exige un namespace exacto y nunca usa `ListClusters` ni enumera namespaces.
+- La vista principal hace únicamente dos lecturas paralelas en el namespace seleccionado: pods y métricas. No repite lecturas mientras otra actualización sigue activa.
 - La interfaz no inicia descargas: los logs y análisis se copian al portapapeles solo cuando el usuario lo solicita.
 - El acceso directo abre Python directamente; no ejecuta scripts PowerShell ni altera su política de ejecución.
 - Las variables secretas de Azure se muestran protegidas.

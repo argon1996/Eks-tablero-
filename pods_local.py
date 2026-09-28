@@ -101,7 +101,7 @@ def main():
     url = f'http://127.0.0.1:{httpd.server_port}'
     print(f'Bancolombia | EKS Console\n{url}\n' + ('DEMO: datos simulados.\n' if backend.DEMO else '') + 'Ctrl+C para cerrar.', flush=True)
     if not args.no_browser:
-        timer = threading.Timer(.6, lambda: webbrowser.open(url)); timer.daemon = True; timer.start()
+        timer = threading.Timer(.15, lambda: webbrowser.open(url)); timer.daemon = True; timer.start()
     try: httpd.serve_forever()
     except KeyboardInterrupt: print('\nTablero detenido.')
     finally:
