@@ -43,6 +43,10 @@ $launcher = Join-Path $installRoot 'launch-console.ps1'
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
     throw 'No fue posible copiar el lanzador a la carpeta de instalación.'
 }
+$appEntry = Join-Path $installRoot 'pods_local.py'
+if (-not (Test-Path -LiteralPath $appEntry -PathType Leaf)) {
+    throw 'No fue posible copiar la aplicación a la carpeta de instalación.'
+}
 
 $python = Get-Command py -ErrorAction SilentlyContinue
 if ($python) {
@@ -55,8 +59,18 @@ if ($python) {
 if ($LASTEXITCODE -ne 0) { throw 'EKS Console requiere Python 3.9 o superior.' }
 
 $shell = New-Object -ComObject WScript.Shell
-$powershell = Get-Command powershell.exe -ErrorAction SilentlyContinue
-$powershellPath = if ($powershell) { $powershell.Source } else { (Get-Process -Id $PID).Path }
+$pyw = Get-Command pyw.exe -ErrorAction SilentlyContinue
+$pythonw = Get-Command pythonw.exe -ErrorAction SilentlyContinue
+if ($pyw) {
+    $shortcutTarget = $pyw.Source
+    $shortcutArguments = '-3 "{0}"' -f $appEntry
+} elseif ($pythonw) {
+    $shortcutTarget = $pythonw.Source
+    $shortcutArguments = '"{0}"' -f $appEntry
+} else {
+    $shortcutTarget = $python.Source
+    $shortcutArguments = if ($python.Name -ieq 'py.exe') { '-3 "{0}"' -f $appEntry } else { '"{0}"' -f $appEntry }
+}
 $shortcutName = 'Bancolombia EKS Console.lnk'
 
 function New-EksShortcut([string]$folder) {
@@ -65,8 +79,8 @@ function New-EksShortcut([string]$folder) {
     }
     $shortcutPath = Join-Path $folder $shortcutName
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = $powershellPath
-    $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $launcher
+    $shortcut.TargetPath = $shortcutTarget
+    $shortcut.Arguments = $shortcutArguments
     $shortcut.WorkingDirectory = $installRoot
     $shortcut.Description = 'Bancolombia EKS Console · operación local de solo lectura'
     $shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,13"

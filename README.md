@@ -5,7 +5,7 @@ Tablero local en Python para consultar Kubernetes/EKS con una interfaz gráfica 
 ## Funcionalidades
 
 - Vista de pods, estados, readiness, reinicios, CPU y memoria.
-- Logs por contenedor con consulta puntual, captura continua, limpieza y descarga local.
+- Logs por contenedor con consulta puntual, captura continua, limpieza y copia al portapapeles; no genera archivos.
 - Inventario de recursos por namespace con manejo de permisos parciales.
 - Vista **Performance** con CPU/memoria frente a requests y limits, HPA, réplicas y captura periódica.
 - Importación de resultados JMeter (`.jtl`/`.csv`) para calcular P50, P95, P99, errores y throughput.
@@ -36,7 +36,7 @@ Ejecuta en PowerShell, desde la carpeta descargada:
 .\install-shortcut.ps1
 ```
 
-El instalador copia la aplicación a `%LOCALAPPDATA%\Programs\Bancolombia EKS Console`, valida Python y crea accesos en el Escritorio, el menú Inicio y la ubicación de aplicaciones ancladas de la barra de tareas. Algunas políticas de Windows exigen anclarla manualmente desde Inicio la primera vez. Para abrir con datos simulados, ejecuta `.\launch-console.ps1 -Demo`; para usar tu script de conexión, `.\launch-console.ps1 -ConnectScript "C:\ruta\conectar-eks.ps1"`.
+El instalador copia la aplicación a `%LOCALAPPDATA%\Programs\Bancolombia EKS Console`, valida Python y crea accesos en el Escritorio, el menú Inicio y la ubicación de aplicaciones ancladas de la barra de tareas. El acceso abre Python directamente, sin omitir políticas de PowerShell. Algunas políticas de Windows exigen anclarla manualmente desde Inicio la primera vez. Para abrir con datos simulados, ejecuta `.\launch-console.ps1 -Demo`; para usar tu script de conexión, `.\launch-console.ps1 -ConnectScript "C:\ruta\conectar-eks.ps1"`.
 
 La conexión recomendada usa la sesión actual configurada por AWS CLI y `kubeconfig`. Como alternativa, la interfaz admite un bloque temporal con `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN`: la identidad se valida con AWS antes de marcarla como conectada y los valores permanecen únicamente en memoria.
 
@@ -57,6 +57,8 @@ Solo se mantiene una instancia por puerto. Si vuelves a abrir EKS Console mientr
 
 - No se envían credenciales a un servidor externo.
 - No se guardan tokens en archivos.
+- La interfaz no inicia descargas: los logs y análisis se copian al portapapeles solo cuando el usuario lo solicita.
+- El acceso directo abre Python directamente; no ejecuta scripts PowerShell ni altera su política de ejecución.
 - Las variables secretas de Azure se muestran protegidas.
 - La herramienta realiza consultas de lectura; no escala, reinicia ni modifica workloads.
 
