@@ -787,7 +787,7 @@ def aws_connection_status(context):
         try:
             identity = json.loads(run_command(
                 ['aws', 'sts', 'get-caller-identity', '--output', 'json', '--no-cli-pager'],
-                timeout=10, env=env))
+                timeout=6, env=env))
             return {'connected': True, 'state': 'connected', 'source': 'temporary',
                     'context': context, 'account': identity.get('Account', ''),
                     'arn': identity.get('Arn', ''), 'loaded_at': loaded_at,
@@ -800,7 +800,7 @@ def aws_connection_status(context):
                 'context': context, 'message': 'kubectl no está disponible en el PATH.'}
     try:
         # kubectl respeta el perfil/exec configurado en kubeconfig (SSO, SAML o AWS CLI).
-        kubectl('version', '--request-timeout=8s', '-o', 'json', context=context, timeout=10)
+        kubectl('--request-timeout=5s', 'version', '-o', 'json', context=context, timeout=7)
         profile = os.environ.get('AWS_PROFILE') or os.environ.get('AWS_DEFAULT_PROFILE') or ''
         return {'connected': True, 'state': 'connected', 'source': 'cli', 'context': context,
                 'profile': profile, 'message': 'La sesión local puede autenticarse contra el clúster.'}

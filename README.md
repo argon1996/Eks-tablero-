@@ -6,6 +6,8 @@ Tablero local en Python para consultar Kubernetes/EKS con una interfaz gráfica 
 
 - Vista de pods, estados, readiness, reinicios, CPU y memoria.
 - Carga progresiva: la tabla de pods aparece sin esperar a Metrics Server y muestra el tiempo real de cada consulta.
+- Conexión directa mediante la sesión local o un bloque temporal, con una sola validación y mensajes breves.
+- Actualización cada 30 segundos que conserva la última lectura ante una demora temporal de VPN o EKS.
 - Logs por contenedor con consulta puntual, captura continua, limpieza y copia al portapapeles; no genera archivos.
 - Inventario de recursos por namespace con manejo de permisos parciales.
 - Vista **Performance** con CPU/memoria frente a requests y limits, HPA, réplicas y captura periódica.

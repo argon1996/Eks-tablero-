@@ -31,7 +31,7 @@ class Handler(BaseHTTPRequestHandler):
             filename, kind = STATIC[parsed.path]
             return self.respond(200, (WEB / filename).read_bytes(), kind)
         try:
-            if parsed.path == '/api/health': result = {'app':'bancolombia-eks-console','version':'3.4','demo':backend.DEMO}
+            if parsed.path == '/api/health': result = {'app':'bancolombia-eks-console','version':'3.5','demo':backend.DEMO}
             elif parsed.path == '/api/config': result = backend.config_info(param('refresh') == 'true', param('details') == 'true')
             elif parsed.path == '/api/aws/status': result = backend.aws_connection_status(param('context'))
             elif parsed.path == '/api/performance': result=backend.PERF.status()
