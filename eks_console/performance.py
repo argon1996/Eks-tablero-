@@ -180,11 +180,12 @@ class PerformanceMonitor:
         self.mode = 'idle'
         self.selection = None
         self.latest = None
-        self.samples = deque(maxlen=1440)
+        # 12 h at a 15 s cadence. This remains bounded and entirely in memory.
+        self.samples = deque(maxlen=2880)
         self.seen_restarts = {}
         self.run = None
         self.run_latest = None
-        self.run_samples = deque(maxlen=1440)
+        self.run_samples = deque(maxlen=2880)
         self.last_completed_key = None
         self.error = self.azure_error = ''
         self.jtl = None
@@ -213,7 +214,14 @@ class PerformanceMonitor:
                 raise ValueError('Conecta Azure DevOps antes de armar la captura.')
         with self.lock:
             self.generation += 1
-            self.scope = {'namespace': namespace, 'context': context, 'micro': str(data.get('micro', ''))}
+            micro_prefix = str(data.get('micro_prefix', '')).strip()
+            if len(micro_prefix) > 80:
+                raise ValueError('El prefijo del microservicio es demasiado largo.')
+            self.scope = {
+                'namespace': namespace, 'context': context,
+                'micro': str(data.get('micro', '')).strip(),
+                'micro_prefix': micro_prefix,
+            }
             self.mode, self.selection, self.latest = mode, selection, None
             self.samples.clear()
             self.seen_restarts = {}
@@ -243,9 +251,17 @@ class PerformanceMonitor:
             self.jtl, self.slo = jtl, {'p95_ms': p95, 'errors_percent': errors}
         return self.status()
 
-    def status(self):
+    def status(self, window_seconds=None):
         with self.lock:
             observed = list(self.run_samples if self.started else self.samples)
+            if window_seconds is not None:
+                try:
+                    window_seconds = max(300, min(43_200, int(window_seconds)))
+                except (TypeError, ValueError):
+                    window_seconds = 1800
+                # Anchor the window to the latest sample so a finished capture remains reviewable.
+                cutoff = (observed[-1].get('time', time.time()) if observed else time.time()) - window_seconds
+                observed = [sample for sample in observed if sample.get('time', 0) >= cutoff]
             return {
                 'mode': self.mode, 'scope': self.scope, 'selection': self.selection,
                 'latest': self.latest, 'samples': observed, 'run': self.run,
@@ -256,7 +272,8 @@ class PerformanceMonitor:
                     observed, self.run_latest if self.started else self.latest,
                     self.jtl, self.slo,
                 ),
-                'coverage_note': 'Muestras locales cada 15 s, hasta 1.440 (aprox. 6 h). '
+                'window_seconds': window_seconds,
+                'coverage_note': 'Muestras locales cada 15 s, hasta 2.880 (aprox. 12 h). '
                                  'No se reconstruye historia anterior.',
             }
 

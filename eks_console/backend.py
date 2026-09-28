@@ -295,9 +295,12 @@ def hpa_record(item):
             'metrics': status.get('currentMetrics') or [], 'conditions': status.get('conditions') or []}
 
 
-def capacity_snapshot(namespace, context, micro=''):
+def capacity_snapshot(namespace, context, micro='', micro_prefix=''):
     data = list_pods(namespace, context)
-    pods = [p for p in data['pods'] if not micro or p['micro'] == micro]
+    prefix = str(micro_prefix or '').strip().lower()
+    pods = [p for p in data['pods']
+            if (not micro or p['micro'] == micro)
+            and (not prefix or p['micro'].lower().startswith(prefix))]
     if len(pods)>500: raise ValueError('Performance admite hasta 500 pods por ámbito. Selecciona un namespace o microservicio más específico.')
     data['pods'] = pods
     if DEMO:
@@ -320,6 +323,9 @@ def capacity_snapshot(namespace, context, micro=''):
             # e indicar el ámbito de HPA para no atribuir silenciosamente otro workload.
             hpas = [h for h in hpas if h['target'].get('name') == micro]
             deployments = [d for d in deployments if d['name'] == micro]
+        elif prefix:
+            hpas = [h for h in hpas if str(h['target'].get('name', '')).lower().startswith(prefix)]
+            deployments = [d for d in deployments if str(d.get('name', '')).lower().startswith(prefix)]
     current_pods = [p for p in pods if p['state'] not in ('Completed', 'Succeeded', 'Terminating')]
     sample = {'time': time.time(), 'total':len(current_pods), 'ready':sum(p['is_ready'] for p in current_pods),
               'attention':sum(p['severity'] in ('danger','warning') for p in current_pods),
@@ -340,7 +346,7 @@ def inventory(namespace, context):
     kinds=['deployments','statefulsets','daemonsets','hpa','services','ingresses','jobs','cronjobs','pvc','resourcequotas','limitranges','replicasets','poddisruptionbudgets','networkpolicies']
     if DEMO:
         return {'resources':[{'kind':r,'status':'available','count':3 if r in ('deployments','hpa','services') else 0,
-                             'names':['generador','renderizador','orquestador'] if r in ('deployments','hpa','services') else []}
+                             'names':['62001-generador','62002-renderizador','62003-orquestador'] if r in ('deployments','hpa','services') else []}
                             for r in kinds], 'demo':True}
     context=resolve_context(context)
     with ThreadPoolExecutor(max_workers=4) as pool:

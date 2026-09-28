@@ -163,7 +163,7 @@ def pod_record(item, metrics):
 def base_demo_snapshot(namespace, context):
     pods = []
     for index in range(9):
-        micro = ['generador', 'renderizador', 'orquestador'][index // 3]
+        micro = ['62001-generador', '62002-renderizador', '62003-orquestador'][index // 3]
         state, severity, ready = 'Running', 'good', True
         if index == 3:
             state, severity, ready = 'CrashLoopBackOff', 'danger', False
@@ -204,8 +204,8 @@ def demo_snapshot(namespace, context):
     data = base_demo_snapshot(namespace, context)
     wave = 1 + .12 * math.sin(time.time() / 25)
     for pod in data['pods']:
-        pod['cpu_request'] = 250 if pod['micro'] == 'orquestador' else 500
-        pod['memory_request'] = 512 if pod['micro'] == 'orquestador' else 1024
+        pod['cpu_request'] = 250 if pod['micro'].endswith('orquestador') else 500
+        pod['memory_request'] = 512 if pod['micro'].endswith('orquestador') else 1024
         pod['resource_basis'], pod['overhead'] = 'Contenedores residentes', {}
         if pod['cpu'] is not None:
             pod['cpu'] = round(pod['cpu'] * wave, 2)

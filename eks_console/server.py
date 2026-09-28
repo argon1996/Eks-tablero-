@@ -31,10 +31,10 @@ class Handler(BaseHTTPRequestHandler):
             filename, kind = STATIC[parsed.path]
             return self.respond(200, (WEB / filename).read_bytes(), kind)
         try:
-            if parsed.path == '/api/health': result = {'app':'bancolombia-eks-console','version':'3.5','demo':backend.DEMO}
+            if parsed.path == '/api/health': result = {'app':'bancolombia-eks-console','version':'3.6','demo':backend.DEMO}
             elif parsed.path == '/api/config': result = backend.config_info(param('refresh') == 'true', param('details') == 'true')
             elif parsed.path == '/api/aws/status': result = backend.aws_connection_status(param('context'))
-            elif parsed.path == '/api/performance': result=backend.PERF.status()
+            elif parsed.path == '/api/performance': result=backend.PERF.status(param('window') or None)
             elif parsed.path == '/api/azure/definitions': result=backend.azure_definitions()
             elif parsed.path == '/api/azure/definition': result=backend.azure_definition(param('kind'),param('id'))
             elif parsed.path == '/api/inventory': result=backend.inventory(param('namespace'),param('context'))
