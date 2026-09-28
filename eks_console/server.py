@@ -31,7 +31,8 @@ class Handler(BaseHTTPRequestHandler):
             filename, kind = STATIC[parsed.path]
             return self.respond(200, (WEB / filename).read_bytes(), kind)
         try:
-            if parsed.path == '/api/config': result = backend.config_info()
+            if parsed.path == '/api/health': result = {'app':'bancolombia-eks-console','version':'3.3','demo':backend.DEMO}
+            elif parsed.path == '/api/config': result = backend.config_info()
             elif parsed.path == '/api/aws/status': result = backend.aws_connection_status(param('context'))
             elif parsed.path == '/api/performance': result=backend.PERF.status()
             elif parsed.path == '/api/azure/definitions': result=backend.azure_definitions()
@@ -40,7 +41,7 @@ class Handler(BaseHTTPRequestHandler):
             elif parsed.path == '/api/pods': result = backend.list_pods(param('namespace', 'default'), param('context'))
             elif parsed.path in ('/api/logs', '/api/events'):
                 result = backend.pod_content(parsed.path.rsplit('/', 1)[1], param('namespace'), param('pod'),
-                    param('context'), param('container'), param('previous') == 'true')
+                    param('context'), param('container'), param('previous') == 'true', param('since'))
             else: return self.respond(404, b'No encontrado', 'text/plain')
             self.respond(200, json.dumps(result, ensure_ascii=False).encode(), 'application/json; charset=utf-8')
         except (RuntimeError, ValueError, OSError) as exc:

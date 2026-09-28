@@ -65,6 +65,24 @@ class AwsConnectionTests(unittest.TestCase):
         self.assertTrue(status['connected'])
         self.assertEqual(status['source'], 'demo')
 
+    @patch.object(backend, 'resolve_context', return_value='qa-context')
+    @patch.object(backend, 'kubectl', return_value='2026-09-28T01:00:01.000Z INFO ready')
+    def test_incremental_logs_use_since_time(self, kubectl, _resolve):
+        since = '2026-09-28T01:00:00.000Z'
+        result = backend.pod_content(
+            'logs', 'qa', 'api-123', 'qa-context', 'api', False, since
+        )
+        self.assertIn('INFO ready', result['text'])
+        args = kubectl.call_args.args
+        self.assertIn('--since-time=' + since, args)
+        self.assertNotIn('--tail=200', args)
+
+    def test_incremental_logs_reject_invalid_timestamp(self):
+        with self.assertRaisesRegex(ValueError, 'Marca de tiempo'):
+            backend.pod_content(
+                'logs', 'qa', 'api-123', 'qa-context', since='; rm -rf'
+            )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -4,7 +4,8 @@ Tablero local en Python para consultar Kubernetes/EKS con una interfaz gráfica 
 
 ## Funcionalidades
 
-- Vista de pods, estados, readiness, reinicios, CPU, memoria y logs.
+- Vista de pods, estados, readiness, reinicios, CPU y memoria.
+- Logs por contenedor con consulta puntual, captura continua, limpieza y descarga local.
 - Inventario de recursos por namespace con manejo de permisos parciales.
 - Vista **Performance** con CPU/memoria frente a requests y limits, HPA, réplicas y captura periódica.
 - Importación de resultados JMeter (`.jtl`/`.csv`) para calcular P50, P95, P99, errores y throughput.
@@ -49,6 +50,8 @@ La conexión recomendada usa la sesión actual configurada por AWS CLI y `kubeco
 - `launch-console.ps1` e `install-shortcut.ps1`: apertura e instalación del acceso de Windows.
 
 La aplicación escucha únicamente en `127.0.0.1`. Para conectar AWS puede usar el contexto existente, ejecutar un script de conexión o pegar las variables temporales en la interfaz. Azure DevOps permite Microsoft Entra mediante `az login` o un PAT autorizado por la organización.
+
+Solo se mantiene una instancia por puerto. Si vuelves a abrir EKS Console mientras ya está activa, el lanzador reconoce su endpoint local y abre la sesión existente en lugar de crear otro proceso. Un servicio distinto que ocupe el mismo puerto nunca se reutiliza como si fuera la consola.
 
 ## Seguridad
 

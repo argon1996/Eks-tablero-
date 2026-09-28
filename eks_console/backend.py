@@ -300,15 +300,23 @@ def _base_demo_snapshot(namespace, context):
             'updated': datetime.now().astimezone().isoformat(timespec='seconds'), 'demo': True}
 
 
-def pod_content(kind, namespace, pod, context, container='', previous=False):
+def pod_content(kind, namespace, pod, context, container='', previous=False, since=''):
     scope(namespace, False); validate_name(pod)
     if container: validate_name(container)
+    if since and (len(since) > 64 or not re.fullmatch(
+            r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})', since)):
+        raise ValueError('Marca de tiempo de logs no válida.')
     if DEMO:
-        if kind == 'logs': return {'text': '[DATOS SIMULADOS]\n2026-09-25 INFO  Servicio iniciado\n2026-09-25 INFO  Documento procesado · 284 ms\n2026-09-25 WARN  Ejemplo de diagnóstico; no corresponde al banco.'}
+        if kind == 'logs':
+            now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+            if since:
+                return {'text': f'{now} INFO  [SIMULADO] Captura activa · verificación periódica correcta'}
+            return {'text': '[DATOS SIMULADOS]\n2026-09-25T14:29:58.000Z INFO  Servicio iniciado\n2026-09-25T14:29:59.000Z INFO  Documento procesado · 284 ms\n2026-09-25T14:30:00.000Z WARN  Ejemplo de diagnóstico; no corresponde al banco.'}
         return {'events': [{'type':'Warning', 'reason':'BackOff', 'message':'[Simulado] Back-off restarting failed container', 'count':6, 'time':'2026-09-25T14:30:00Z'}]}
     context = resolve_context(context)
     if kind == 'logs':
-        args = ['logs', '-n', namespace, pod, '--tail=200', '--limit-bytes=180000', '--timestamps=true']
+        args = ['logs', '-n', namespace, pod, '--limit-bytes=180000', '--timestamps=true']
+        args += [f'--since-time={since}'] if since else ['--tail=200']
         if container: args += ['-c', container]
         if previous: args += ['--previous=true']
         return {'text': kubectl(*args, context=context)}

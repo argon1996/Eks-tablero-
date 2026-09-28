@@ -6,10 +6,38 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
+import json
+import urllib.request
 import webbrowser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from eks_console import backend, server
+
+APP_ID = 'bancolombia-eks-console'
+
+
+def existing_instance_url(port, attempts=1):
+    """Devuelve la URL solo si el puerto pertenece a otra EKS Console."""
+    url = f'http://127.0.0.1:{port}'
+    for attempt in range(max(1, attempts)):
+        try:
+            with urllib.request.urlopen(url + '/api/health', timeout=.7) as response:
+                data = json.loads(response.read(4096).decode('utf-8'))
+            if data.get('app') == APP_ID:
+                return url
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+        if attempt + 1 < attempts:
+            time.sleep(.15)
+    return ''
+
+
+def reopen_existing(url, no_browser=False):
+    print(f'EKS Console ya está abierta. Reutilizando la sesión activa:\n{url}', flush=True)
+    if not no_browser:
+        webbrowser.open(url)
+    return 0
 
 def connect_and_launch(script, args):
     if script == 'auto':
@@ -56,12 +84,19 @@ def main():
     parser.add_argument('--connected-script', default='', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.connect_script and args.demo: parser.error('Usa --demo o --connect-script por separado.')
+    existing = existing_instance_url(args.port)
+    if existing:
+        return reopen_existing(existing, args.no_browser)
     if args.connect_script:
         try: return connect_and_launch(args.connect_script, args)
         except (ValueError, OSError) as exc: parser.error(str(exc))
     backend.DEMO, backend.CONNECTED_SCRIPT = args.demo, args.connected_script
     try: httpd = ThreadingHTTPServer(('127.0.0.1', args.port), server.Handler)
-    except OSError as exc: parser.error(f'No se puede abrir el puerto {args.port}: {exc}')
+    except OSError as exc:
+        existing = existing_instance_url(args.port, attempts=5)
+        if existing:
+            return reopen_existing(existing, args.no_browser)
+        parser.error(f'No se puede abrir el puerto {args.port}: {exc}')
     backend.PERF=backend.PerformanceMonitor()
     url = f'http://127.0.0.1:{httpd.server_port}'
     print(f'Bancolombia | EKS Console\n{url}\n' + ('DEMO: datos simulados.\n' if backend.DEMO else '') + 'Ctrl+C para cerrar.', flush=True)
